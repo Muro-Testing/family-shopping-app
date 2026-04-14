@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Family Shopping List</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.42.0/dist/umd/supabase.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            font-feature-settings: 'tnum' 1;
+        }
+
+        :root {
+            --primary: #007AFF;
+            --success: #34C759;
+            --danger: #FF3B30;
+            --bg: #F2F2F7;
+            --card: #FFFFFF;
+            --text: #000000;
+            --text-secondary: #8E8E93;
+            --border: #C6C6C8;
+            --border-light: #E5E5EA;
+            --sidebar: #F2F2F7;
+            --accent-bg: #007AFF15;
+            --press-opacity: 0.7;
+            --shadow: 0 2px 12px rgba(0,0,0,0.06);
+            --radius: 12px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #0A84FF;
+                --success: #30D158;
+                --danger: #FF453A;
+                --bg: #000000;
+                --card: #1C1C1E;
+                --text: #FFFFFF;
+                --text-secondary: #8E8E93;
+                --border: #38383A;
+                --border-light: #2C2C2E;
+                --sidebar: #000000;
+                --shadow: 0 2px 12px rgba(0,0,0,0.3);
+            }
+        }
+
+        body {
+            background: var(--bg);
+            min-height: 100vh;
+            overscroll-behavior: none;
+            color: var(--text);
+        }
+
+        .app-layout {
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            display: none;
+        }
+
+        .main-content {
+            padding: 16px 16px 120px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 34px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            margin-bottom: 16px;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .list-selector {
+            background: var(--card);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            padding: 4px;
+            overflow-x: auto;
+            gap: 4px;
+        }
+
+        .list-tab {
+            padding: 10px 16px;
+            border-radius: 7px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+
+        .list-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .list-tab:active {
+            transform: scale(0.96);
+        }
+
+        .add-list-btn {
+            padding: 10px 12px;
+            border-radius: 7px;
+            color: var(--primary);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .list-delete {
+            color: var(--danger);
+            margin-left: 8px;
+            font-size: 13px;
+            opacity: 0.7;
+        }
+
+        .list-tab:hover .list-delete {
+            opacity: 1;
+        }
+
+        .history-toggle {
+            font-size: 20px;
+            padding: 8px;
+            color: var(--primary);
+            cursor: pointer;
+        }
+
+        .add-form {
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .input-group {
+            display: flex;
+            border-bottom: 0.5px solid var(--border-light);
+        }
+
+        .input-group:last-child {
+            border-bottom: none;
+        }
+
+        input {
+            background: transparent;
+            border: none;
+            padding: 16px;
+            font-size: 17px;
+            width: 100%;
+            color: var(--text);
+        }
+
+        input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        input:focus {
+            outline: none;
+        }
+
+        .input-name {
+            flex: 1;
+        }
+
+        .input-qty {
+            max-width: 90px;
+            text-align: right;
+        }
+
+        .add-button {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px;
+            font-weight: 600;
+            font-size: 17px;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+
+        .add-button:active {
+            opacity: var(--press-opacity);
+        }
+
+        .items-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .item-card {
+            background: var(--card);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: all 0.2s;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .item-card:active {
+            transform: scale(0.98);
+        }
+
+        .item-card.checked {
+            opacity: 0.6;
+        }
+
+        .item-card.checked .item-name {
+            text-decoration: line-through;
+        }
+
+        .checkbox {
+            width: 28px;
+            height: 28px;
+            border: 2px solid var(--border);
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .checkbox.checked {
+            background: var(--success);
+            border-color: var(--success);
+            color: white;
+        }
+
+        .item-name {
+            flex: 1;
+            font-weight: 500;
+            font-size: 17px;
+        }
+
+        .item-qty {
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+            min-width: 50px;
+            text-align: right;
+        }
+
+        .item-avatar {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            font-size: 10px;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .delete-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--danger);
+            font-size: 14px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+
+        .delete-btn:active {
+            opacity: 1;
+        }
+
+        .action-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 12px 16px 32px;
+            box-shadow: 0 -2px 20px rgba(0,0,0,0.08);
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            padding-bottom: max(32px, env(safe-area-inset-bottom));
+        }
+
+        .action-btn {
+            padding: 14px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            flex: 1;
+            max-width: 200px;
+            transition: all 0.15s;
+        }
+
+        .action-btn:active {
+            opacity: var(--press-opacity);
+            transform: scale(0.98);
+        }
+
+        .clear-btn {
+            background: var(--danger);
+            color: white;
+        }
+
+        .complete-btn {
+            background: var(--success);
+            color: white;
+        }
+
+        .sync-status {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-secondary);
+            font-size: 17px;
+            line-height: 1.5;
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            padding: 20px;
+        }
+
+        .modal {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .modal h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .modal input {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 16px 0;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            border: none;
+            font-size: 16px;
+        }
+
+        .settings-btn {
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .settings-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .settings-btn:active {
+            transform: scale(0.96);
+        }
+
+        .cancel-btn {
+            background: var(--border-light);
+            color: var(--text);
+        }
+
+        .save-btn {
+            background: var(--primary);
+            color: white;
+        }
+
+        .delete-all-btn {
+            background: var(--danger);
+            color: white;
+            width: 100%;
+            margin-top: 16px;
+        }
+
+        .auth-container {
+            max-width: 400px;
+            margin: 60px auto;
+            padding: 0 20px;
+        }
+
+        .auth-card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 32px 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .auth-btn {
+            width: 100%;
+            padding: 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            margin: 8px 0;
+            cursor: pointer;
+        }
+
+        .auth-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .auth-divider {
+            text-align: center;
+            margin: 20px 0;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        @media (min-width: 1024px) {
+            .app-layout {
+                display: grid;
+                grid-template-columns: 280px 1fr;
+            }
+            
+            .sidebar {
+                display: block;
+                background: var(--sidebar);
+                border-right: 0.5px solid var(--border-light);
+                padding: 24px 16px;
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                overflow-y: auto;
+            }
+
+            .sidebar h2 {
+                font-size: 20px;
+                font-weight: 700;
+                margin-bottom: 20px;
+                padding-left: 8px;
+            }
+
+            .history-item {
+                background: var(--card);
+                padding: 14px;
+                border-radius: 10px;
+                margin-bottom: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .history-item:active {
+                transform: scale(0.98);
+            }
+
+            .history-date {
+                font-weight: 600;
+                font-size: 15px;
+            }
+
+            .history-total {
+                font-weight: 700;
+                font-size: 18px;
+                margin-top: 4px;
+                color: var(--primary);
+            }
+
+            .sidebar-total {
+                margin-top: 24px;
+                padding: 16px;
+                background: var(--accent-bg);
+                border-radius: 12px;
+                font-weight: 700;
+                text-align: center;
+            }
+
+            .sidebar-total div:last-child {
+                font-size: 22px;
+                margin-top: 4px;
+                color: var(--primary);
+            }
+
+            .main-content {
+                margin-left: 280px;
+                padding: 24px 32px 140px;
+                max-width: 700px;
+            }
+
+            .action-bar {
+                left: 280px;
+            }
+
+            .history-toggle {
+                display: none;
+            }
+        }
+
+        @media (max-width: 1023px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s;
+                z-index: 150;
+                display: block;
+                background: var(--sidebar);
+                border-right: 0.5px solid var(--border-light);
+                padding: 24px 16px;
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                overflow-y: auto;
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-close {
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                font-size: 20px;
+                cursor: pointer;
+                padding: 8px;
+            }
+
+            .sidebar h2 {
+                font-size: 20px;
+                font-weight: 700;
+                margin-bottom: 20px;
+                padding-left: 8px;
+                margin-top: 32px;
+            }
+
+            .history-item {
+                background: var(--card);
+                padding: 14px;
+                border-radius: 10px;
+                margin-bottom: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .history-total {
+                font-weight: 700;
+                font-size: 18px;
+                margin-top: 4px;
+                color: var(--primary);
+            }
+
+            .sidebar-total {
+                margin-top: 24px;
+                padding: 16px;
+                background: var(--accent-bg);
+                border-radius: 12px;
+                font-weight: 700;
+                text-align: center;
+            }
+
+            .sidebar-total div:last-child {
+                font-size: 22px;
+                margin-top: 4px;
+                color: var(--primary);
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-screen" style="display:none">
+        <div class="auth-container">
+            <div class="auth-card">
+                <h3 style="text-align:center; font-size:28px; margin-bottom:12px">🛒 Family Shopping</h3>
+                <p style="text-align:center; color: var(--text-secondary); margin-bottom:24px">Shop together, always in sync</p>
+
+                <input type="email" id="auth-email" placeholder="Email address">
+                <input type="password" id="auth-password" placeholder="Password">
+                
+                <button class="auth-btn primary" onclick="login()">Login</button>
+                <button class="auth-btn" style="background: var(--border-light)" onclick="signup()">Create Account</button>
+
+                <div class="auth-divider">OR</div>
+
+                <button class="auth-btn" style="background: var(--border-light)" onclick="continueLocal()">Continue without account</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-app" style="display:none">
+        <div class="app-layout">
+            <div class="sidebar" id="sidebar">
+                <i class="fa-solid fa-xmark sidebar-close" onclick="toggleSidebar()"></i>
+                <h2>📋 Shopping History</h2>
+                <div id="history-list"></div>
+                <div class="sidebar-total">
+                    <div>Total Spent</div>
+                    <div id="grand-total">0.00 GBP</div>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <h1>
+                    🛒 Shopping
+                    <div style="display:flex; gap:8px; align-items:center">
+                        <div id="user-avatar" class="user-avatar" onclick="toggleSettings()">U</div>
+                        <i class="fa-solid fa-clock-rotate-left history-toggle" onclick="toggleSidebar()"></i>
+                    </div>
+                </h1>
+
+                <div class="list-selector" id="list-selector"></div>
+                
+                <div class="sync-status" id="sync-status">Connecting...</div>
+
+                <div class="add-form">
+                    <div class="input-group">
+                        <input type="text" id="item-name" class="input-name" placeholder="Product name" autocomplete="off">
+                        <input type="text" id="item-qty" class="input-qty" placeholder="Qty" autocomplete="off">
+                    </div>
+                    <button class="add-button" onclick="addItem()">Add Item</button>
+                </div>
+
+                <div id="items-list" class="items-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-cart-shopping"></i>
+                        <div>Add items below exactly like you<br>would write them on your fridge whiteboard</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <button class="action-btn clear-btn" onclick="clearChecked()"><i class="fa-solid fa-trash"></i> Clear checked</button>
+            <button class="action-btn complete-btn" onclick="showCompleteModal()"><i class="fa-solid fa-check"></i> Complete</button>
+        </div>
+
+        <div class="modal-overlay" id="settings-modal" style="display:none">
+            <div class="modal">
+                <h3>⚙️ Settings</h3>
+                
+                <div style="margin:20px 0">
+                    <div style="font-weight:600; margin-bottom:12px">Language</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px">
+                        <button class="settings-btn" data-lang="en" onclick="setLanguage('en')">🇬🇧 EN</button>
+                        <button class="settings-btn" data-lang="bg" onclick="setLanguage('bg')">🇧🇬 BG</button>
+                        <button class="settings-btn" data-lang="tr" onclick="setLanguage('tr')">🇹🇷 TR</button>
+                    </div>
+                </div>
+
+                <div style="margin:20px 0">
+                    <div style="font-weight:600; margin-bottom:12px">Currency</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px">
+                        <button class="settings-btn" data-currency="GBP" onclick="setCurrency('GBP')">£ GBP</button>
+                        <button class="settings-btn" data-currency="EUR" onclick="setCurrency('EUR')">€ EUR</button>
+                        <button class="settings-btn" data-currency="USD" onclick="setCurrency('USD')">$ USD</button>
+                    </div>
+                </div>
+
+                <button class="modal-btn" style="width:100%; margin-top:8px" onclick="logout()">Logout</button>
+                <button class="modal-btn delete-all-btn" onclick="deleteAllLists()">Delete all lists</button>
+
+                <div style="display:flex; gap:10px; margin-top:8px">
+                    <button class="modal-btn cancel-btn" style="flex:1" onclick="closeSettings()">Cancel</button>
+                    <button class="modal-btn save-btn" style="flex:1" onclick="closeSettings()">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="new-list-modal" style="display:none">
+            <div class="modal">
+                <h3>🆕 New Shopping List</h3>
+                <input type="text" id="new-list-name" placeholder="List name">
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel-btn" onclick="closeNewListModal()">Cancel</button>
+                    <button class="modal-btn save-btn" onclick="createNewList()">Create</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="complete-modal" style="display:none">
+            <div class="modal">
+                <h3>✅ Shopping Completed</h3>
+                <p style="text-align:center; color: var(--text-secondary)">Enter total amount from the receipt</p>
+                <input type="number" id="receipt-total" placeholder="0.00" step="0.01">
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel-btn" onclick="closeModal()">Cancel</button>
+                    <button class="modal-btn save-btn" onclick="completeShopping()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 👇 ENTER YOUR SUPABASE DETAILS HERE
+        const SUPABASE_URL = '';
+        const SUPABASE_ANON_KEY = '';
+
+        let supabase = null;
+        let currentUser = null;
+        let familyId = null;
+        let userColors = {};
+
+        let lists = [];
+        let currentListId = null;
+        let history = [];
+
+        let currentLang = localStorage.getItem('app_lang') || 'en';
+        let currentCurrency = localStorage.getItem('app_currency') || 'GBP';
+        let localMode = localStorage.getItem('local_mode') === 'true';
+
+        const translations = {
+            en: {
+                "shopping_list": "Shopping List",
+                "add_item": "Add Item",
+                "product_name": "Product name",
+                "quantity": "Qty",
+                "clear_checked": "Clear checked",
+                "complete": "Complete",
+                "shopping_completed": "Shopping Completed",
+                "enter_receipt": "Enter total amount from the receipt",
+                "cancel": "Cancel",
+                "save": "Save",
+                "shopping_history": "Shopping History",
+                "total_spent": "Total Spent",
+                "empty_state": "Add items below exactly like you\nwould write them on your fridge whiteboard",
+                "new_list": "New List",
+                "delete_all_lists": "Delete all lists"
+            },
+            bg: {
+                "shopping_list": "Пазарски Списък",
+                "add_item": "Добави Продукт",
+                "product_name": "Име на продукт",
+                "quantity": "Брой",
+                "clear_checked": "Изчисти маркираните",
+                "complete": "Завърши",
+                "shopping_completed": "Пазаруване Завършено",
+                "enter_receipt": "Въведете сумата от касовата бележка",
+                "cancel": "Отмяна",
+                "save": "Запази",
+                "shopping_history": "История на Пазаруване",
+                "total_spent": "Общо Разходи",
+                "empty_state": "Добавете продукти по долу точно както\nбихте ги написали на таблото през хладилника",
+                "new_list": "Нов Списък",
+                "delete_all_lists": "Изтрий всички списъци"
+            },
+            tr: {
+                "shopping_list": "Alışveriş Listesi",
+                "add_item": "Ürün Ekle",
+                "product_name": "Ürün adı",
+                "quantity": "Adet",
+                "clear_checked": "Seçilenleri Temizle",
+                "complete": "Tamamla",
+                "shopping_completed": "Alışveriş Tamamlandı",
+                "enter_receipt": "Fişten toplam tutarı girin",
+                "cancel": "İptal",
+                "save": "Kaydet",
+                "shopping_history": "Alışveriş Geçmişi",
+                "total_spent": "Toplam Harcama",
+                "empty_state": "Ürünleri aşağıya ekleyin\nbuzdolabı panosuna yazdığınız gibi",
+                "new_list": "Yeni Liste",
+                "delete_all_lists": "Tüm listeleri sil"
+            }
+        };
+
+        function t(key) {
+            return translations[currentLang][key] || key;
+        }
+
+        function getCurrentItems() {
+            const list = lists.find(l => l.id === currentListId);
+            return list ? list.items : [];
+        }
+
+        function saveLists() {
+            localStorage.setItem('shopping_lists', JSON.stringify(lists));
+        }
+
+        function loadLists() {
+            lists = JSON.parse(localStorage.getItem('shopping_lists') || '[{"id":1,"name":"Default","items":[]}]');
+            currentListId = parseInt(localStorage.getItem('current_list_id')) || 1;
+            if (!lists.find(l => l.id === currentListId)) currentListId = lists[0].id;
+        }
+
+        function getUserColor(userId) {
+            if (!userColors[userId]) {
+                const colors = ['#FF2D55','#FF9500','#FFCC00','#34C759','#007AFF','#5856D6','#AF52DE'];
+                userColors[userId] = colors[Math.abs(hashCode(userId)) % colors.length];
+            }
+            return userColors[userId];
+        }
+
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return hash;
+        }
+
+        function renderListSelector() {
+            const selector = document.getElementById('list-selector');
+            
+            let html = '';
+            lists.forEach(list => {
+                html += `<div class="list-tab ${list.id === currentListId ? 'active' : ''}" onclick="switchList(${list.id})" oncontextmenu="renameList(${list.id}, event)">
+                    ${list.name}
+                    ${lists.length > 1 ? `<span class="list-delete" onclick="event.stopPropagation(); deleteList(${list.id})">×</span>` : ''}
+                </div>`;
+            });
+            html += `<div class="add-list-btn" onclick="showNewListModal()">+</div>`;
+            
+            selector.innerHTML = html;
+        }
+
+        function switchList(listId) {
+            currentListId = listId;
+            localStorage.setItem('current_list_id', listId);
+            renderListSelector();
+            renderItems();
+        }
+
+        function showNewListModal() {
+            document.getElementById('new-list-modal').style.display = 'flex';
+            document.getElementById('new-list-name').focus();
+        }
+
+        function closeNewListModal() {
+            document.getElementById('new-list-modal').style.display = 'none';
+        }
+
+        async function createNewList() {
+            const name = document.getElementById('new-list-name').value.trim();
+            if (!name) return;
+
+            if (supabase && currentUser) {
+                await supabase.from('shopping_lists').insert({family_id: familyId, name, created_by: currentUser.id});
+            } else {
+                const newId = Math.max(...lists.map(l => l.id), 0) + 1;
+                lists.push({ id: newId, name, items: [] });
+                saveLists();
+                currentListId = newId;
+                localStorage.setItem('current_list_id', newId);
+            }
+            
+            closeNewListModal();
+            renderListSelector();
+            renderItems();
+        }
+
+        function renameList(listId, e) {
+            e.preventDefault();
+            const list = lists.find(l => l.id === listId);
+            if (!list) return;
+
+            const newName = prompt(`Rename list "${list.name}":`, list.name);
+            if (newName && newName.trim()) {
+                list.name = newName.trim();
+                saveLists();
+                renderListSelector();
+            }
+        }
+
+        async function deleteList(listId) {
+            if (lists.length <= 1) return;
+            if (!confirm('Delete this list?')) return;
+
+            if (supabase && currentUser) {
+                await supabase.from('shopping_lists').delete().eq('id', listId);
+            } else {
+                lists = lists.filter(l => l.id !== listId);
+                if (currentListId === listId) {
+                    currentListId = lists[0].id;
+                    localStorage.setItem('current_list_id', currentListId);
+                }
+                saveLists();
+            }
+
+            renderListSelector();
+            renderItems();
+        }
+
+        async function deleteHistoryEntry(tripId) {
+            if (!confirm('Delete this history entry?')) return;
+            
+            if (supabase && currentUser) {
+                await supabase.from('shopping_trips').delete().eq('id', tripId);
+            } else {
+                history = history.filter(t => t.id !== tripId);
+                saveLocalHistory();
+            }
+            renderHistory();
+        }
+
+        async function deleteAllLists() {
+            if (!confirm('Delete ALL shopping lists permanently?')) return;
+            
+            lists = [{id:1, name:"Default", items:[]}];
+            currentListId = 1;
+            history = [];
+            
+            saveLists();
+            saveLocalHistory();
+            
+            renderListSelector();
+            renderItems();
+            renderHistory();
+            closeSettings();
+        }
+
+        function updateUI() {
+            document.getElementById('item-name').placeholder = t('product_name');
+            document.getElementById('item-qty').placeholder = t('quantity');
+            document.querySelector('.add-button').textContent = t('add_item');
+            document.querySelector('.clear-btn').innerHTML = `<i class="fa-solid fa-trash"></i> ${t('clear_checked')}`;
+            document.querySelector('.complete-btn').innerHTML = `<i class="fa-solid fa-check"></i> ${t('complete')}`;
+            
+            document.querySelectorAll('[data-lang]').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
+            document.querySelectorAll('[data-currency]').forEach(btn => btn.classList.toggle('active', btn.dataset.currency === currentCurrency));
+
+            const items = getCurrentItems();
+            if (items.length === 0) {
+                const el = document.querySelector('.empty-state div');
+                if (el) el.innerHTML = t('empty_state').replace('\n', '<br>');
+            }
+
+            if (currentUser) {
+                const avatar = document.getElementById('user-avatar');
+                avatar.style.background = getUserColor(currentUser.id);
+                avatar.textContent = currentUser.email ? currentUser.email[0].toUpperCase() : 'U';
+            }
+        }
+
+        function toggleSettings() {
+            document.getElementById('settings-modal').style.display = 'flex';
+            updateUI();
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').style.display = 'none';
+            updateUI();
+            renderHistory();
+        }
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('app_lang', lang);
+            updateUI();
+        }
+
+        function setCurrency(currency) {
+            currentCurrency = currency;
+            localStorage.setItem('app_currency', currency);
+            updateUI();
+            renderHistory();
+        }
+
+        async function login() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) alert(error.message);
+        }
+
+        async function signup() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            
+            const { error } = await supabase.auth.signUp({ email, password });
+            if (error) alert(error.message);
+            else alert('Check your email for confirmation link');
+        }
+
+        async function logout() {
+            await supabase.auth.signOut();
+            currentUser = null;
+            closeSettings();
+            showAuthScreen();
+        }
+
+        function continueLocal() {
+            localMode = true;
+            localStorage.setItem('local_mode', 'true');
+            showMainApp();
+            initLocal();
+        }
+
+        function showAuthScreen() {
+            document.getElementById('auth-screen').style.display = 'block';
+            document.getElementById('main-app').style.display = 'none';
+        }
+
+        function showMainApp() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'block';
+        }
+
+        async function initApp() {
+            if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+                try {
+                    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    
+                    const { data: { user } } = await supabase.auth.getUser();
+                    
+                    if (user) {
+                        currentUser = user;
+                        initRealtime();
+                        showMainApp();
+                        await loadServerData();
+                        document.getElementById('sync-status').textContent = '✅ Online';
+                    } else if (localMode) {
+                        showMainApp();
+                        initLocal();
+                    } else {
+                        showAuthScreen();
+                    }
+
+                    supabase.auth.onAuthStateChange(async (event, session) => {
+                        if (session?.user) {
+                            currentUser = session.user;
+                            localMode = false;
+                            localStorage.removeItem('local_mode');
+                            showMainApp();
+                            initRealtime();
+                            await loadServerData();
+                        }
+                    });
+
+                } catch (e) {
+                    console.error('Supabase connection failed', e);
+                    document.getElementById('sync-status').textContent = '⚠️ Offline';
+                    showMainApp();
+                    initLocal();
+                }
+            } else {
+                document.getElementById('sync-status').textContent = '📝 Local mode';
+                showMainApp();
+                initLocal();
+            }
+            
+            renderListSelector();
+            renderItems();
+            renderHistory();
+            updateUI();
+        }
+
+        function initLocal() {
+            loadLists();
+            loadLocalHistory();
+            renderListSelector();
+            renderItems();
+            renderHistory();
+            updateUI();
+        }
+
+        async function loadServerData() {
+            const { data: familyData } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).single();
+            familyId = familyData.family_id;
+
+            const { data: listsData } = await supabase.from('shopping_lists').select('*').eq('family_id', familyId);
+            lists = listsData || [];
+
+            const { data: itemsData } = await supabase.from('shopping_items').select('*').eq('family_id', familyId).is('completed_trip_id', null);
+            
+            lists.forEach(list => {
+                list.items = itemsData.filter(i => i.list_id === list.id) || [];
+            });
+
+            if (lists.length === 0) {
+                lists.push({id:1, name:"Default", items:[]});
+            }
+
+            currentListId = lists[0].id;
+
+            const { data: tripsData } = await supabase.from('shopping_trips').select('*').eq('family_id', familyId).order('completed_at', {ascending:false});
+            history = tripsData || [];
+
+            renderListSelector();
+            renderItems();
+            renderHistory();
+        }
+
+        function initRealtime() {
+            supabase.channel('live')
+                .on('postgres_changes', {event:'*', schema:'public', table:'shopping_items'}, () => loadServerData())
+                .on('postgres_changes', {event:'*', schema:'public', table:'shopping_lists'}, () => loadServerData())
+                .on('postgres_changes', {event:'*', schema:'public', table:'shopping_trips'}, () => loadServerData())
+                .subscribe();
+        }
+
+        function loadLocalHistory() {
+            history = JSON.parse(localStorage.getItem('shopping_history') || '[]');
+        }
+
+        function saveLocalHistory() {
+            localStorage.setItem('shopping_history', JSON.stringify(history));
+        }
+
+        async function addItem() {
+            const name = document.getElementById('item-name').value.trim();
+            const qty = document.getElementById('item-qty').value.trim() || '1';
+
+            if (!name) return;
+
+            if (supabase && currentUser) {
+                await supabase.from('shopping_items').insert({
+                    family_id: familyId,
+                    list_id: currentListId,
+                    name,
+                    quantity: qty,
+                    created_by: currentUser.id
+                });
+            } else {
+                const list = lists.find(l => l.id === currentListId);
+                if (!list) return;
+
+                const newItem = {
+                    id: Date.now(),
+                    name,
+                    quantity: qty,
+                    checked: false,
+                    created_at: new Date().toISOString()
+                };
+
+                list.items.push(newItem);
+                saveLists();
+                renderItems();
+            }
+            
+            document.getElementById('item-name').value = '';
+            document.getElementById('item-qty').value = '';
+            document.getElementById('item-name').focus();
+        }
+
+        async function toggleItem(id) {
+            if (supabase && currentUser) {
+                const item = (await supabase.from('shopping_items').select('checked').eq('id', id).single()).data;
+                await supabase.from('shopping_items').update({
+                    checked: !item.checked,
+                    checked_by: !item.checked ? currentUser.id : null,
+                    checked_at: !item.checked ? new Date().toISOString() : null
+                }).eq('id', id);
+            } else {
+                const list = lists.find(l => l.id === currentListId);
+                if (!list) return;
+                
+                const item = list.items.find(i => i.id === id);
+                if (!item) return;
+
+                item.checked = !item.checked;
+                saveLists();
+                renderItems();
+            }
+        }
+
+        async function deleteItem(id, e) {
+            e.stopPropagation();
+            
+            if (supabase && currentUser) {
+                await supabase.from('shopping_items').delete().eq('id', id);
+            } else {
+                const list = lists.find(l => l.id === currentListId);
+                if (!list) return;
+
+                list.items = list.items.filter(i => i.id !== id);
+                saveLists();
+                renderItems();
+            }
+        }
+
+        async function clearChecked() {
+            if (!confirm('Clear all checked items?')) return;
+
+            if (supabase && currentUser) {
+                const list = lists.find(l => l.id === currentListId);
+                const checkedIds = list.items.filter(i => i.checked).map(i => i.id);
+                await supabase.from('shopping_items').delete().in('id', checkedIds);
+            } else {
+                const list = lists.find(l => l.id === currentListId);
+                if (!list) return;
+
+                list.items = list.items.filter(i => !i.checked);
+                saveLists();
+                renderItems();
+            }
+        }
+
+        function showCompleteModal() {
+            document.getElementById('complete-modal').style.display = 'flex';
+            document.getElementById('receipt-total').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('complete-modal').style.display = 'none';
+        }
+
+        async function completeShopping() {
+            const total = parseFloat(document.getElementById('receipt-total').value);
+            
+            if (!total || total <= 0) {
+                alert('Please enter receipt total');
+                return;
+            }
+
+            const list = lists.find(l => l.id === currentListId);
+            if (!list) return;
+
+            if (supabase && currentUser) {
+                await supabase.from('shopping_trips').insert({
+                    family_id: familyId,
+                    total_amount: total,
+                    completed_by: currentUser.id,
+                    items: JSON.stringify(list.items)
+                });
+
+                await supabase.from('shopping_items').delete().eq('list_id', currentListId);
+            } else {
+                const trip = {
+                    id: Date.now(),
+                    list_id: currentListId,
+                    list_name: list.name,
+                    completed_at: new Date().toISOString(),
+                    total_amount: total,
+                    items: JSON.stringify(list.items)
+                };
+
+                history.unshift(trip);
+                saveLocalHistory();
+
+                list.items = [];
+                saveLists();
+                renderItems();
+                renderHistory();
+            }
+
+            closeModal();
+        }
+
+        function renderItems() {
+            const list = document.getElementById('items-list');
+            const items = getCurrentItems();
+            
+            if (items.length === 0) {
+                list.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-cart-shopping"></i>
+                    <div>${t('empty_state').replace('\n', '<br>')}</div>
+                </div>`;
+                return;
+            }
+
+            const sorted = [...items].sort((a,b) => a.checked - b.checked);
+
+            list.innerHTML = sorted.map(item => `
+            <div class="item-card ${item.checked ? 'checked' : ''}" onclick="toggleItem(${item.id})">
+                <div class="checkbox ${item.checked ? 'checked' : ''}">${item.checked ? '<i class="fa-solid fa-check"></i>' : ''}</div>
+                <div class="item-name">${item.name}</div>
+                <div class="item-qty">${item.quantity}</div>
+                
+                ${item.created_by ? `<div class="item-avatar" style="background:${getUserColor(item.created_by)}">${item.created_by[0].toUpperCase()}</div>` : ''}
+                
+                <div class="delete-btn" onclick="deleteItem(${item.id}, event)"><i class="fa-solid fa-xmark"></i></div>
+            </div>
+            `).join('');
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            if (!list) return;
+            
+            list.innerHTML = history.map(trip => `
+            <div class="history-item" style="display:flex; justify-content:space-between; align-items:center">
+                <div>
+                    <div class="history-date">${new Date(trip.completed_at).toLocaleDateString()} • ${trip.list_name || 'Shopping'}</div>
+                    <div class="history-total">${trip.total_amount.toFixed(2)} ${currentCurrency}</div>
+                </div>
+                <div class="delete-btn" onclick="deleteHistoryEntry(${trip.id}); event.stopPropagation();" style="opacity:1"><i class="fa-solid fa-trash"></i></div>
+            </div>
+            `).join('');
+
+            const grandTotal = history.reduce((sum, trip) => sum + trip.total_amount, 0);
+            const totalEl = document.getElementById('grand-total');
+            if (totalEl) totalEl.textContent = grandTotal.toFixed(2) + ' ' + currentCurrency;
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        document.addEventListener('keypress', e => {
+            if (e.key === 'Enter') {
+                if (document.activeElement.id === 'receipt-total') {
+                    completeShopping();
+                } else if (document.activeElement.id === 'new-list-name') {
+                    createNewList();
+                } else if (document.activeElement.id === 'auth-email' || document.activeElement.id === 'auth-password') {
+                    login();
+                } else {
+                    addItem();
+                }
+            }
+        });
+
+        initApp();
+    </script>
+</body>
+</html>
