@@ -672,8 +672,10 @@
                 <h3 style="text-align:center; font-size:28px; margin-bottom:12px">🛒 Family Shopping</h3>
                 <p style="text-align:center; color: var(--text-secondary); margin-bottom:24px">Shop together, always in sync</p>
 
-                <input type="email" id="auth-email" placeholder="Email address">
-                <input type="password" id="auth-password" placeholder="Password">
+                <form onsubmit="event.preventDefault(); login()">
+                    <input type="email" id="auth-email" placeholder="Email address">
+                    <input type="password" id="auth-password" placeholder="Password">
+                </form>
                 
                 <button class="auth-btn primary" onclick="login()">Login</button>
                 <button class="auth-btn" style="background: var(--border-light)" onclick="signup()">Create Account</button>
@@ -1094,10 +1096,10 @@
         }
 
         async function initApp() {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                const { data: { user } } = await supabase.auth.getUser();
+
             if (user) {
                 currentUser = user;
                 initRealtime();
@@ -1126,7 +1128,13 @@
             renderItems();
             renderHistory();
             updateUI();
+        } catch (e) {
+            localMode = true;
+            showMainApp();
+            initLocal();
+            document.getElementById('sync-status').textContent = '⚡ Local Mode';
         }
+    }
 
         function initLocal() {
             loadLists();
