@@ -673,8 +673,8 @@
                 <p style="text-align:center; color: var(--text-secondary); margin-bottom:24px">Shop together, always in sync</p>
 
                 <form onsubmit="event.preventDefault(); login()">
-                    <input type="email" id="auth-email" placeholder="Email address">
-                    <input type="password" id="auth-password" placeholder="Password">
+                <input type="email" id="auth-email" placeholder="Email address" autocomplete="username">
+                <input type="password" id="auth-password" placeholder="Password" autocomplete="current-password">
                 </form>
                 
                 <button class="auth-btn primary" onclick="login()">Login</button>
@@ -806,7 +806,7 @@
 
         let currentLang = localStorage.getItem('app_lang') || 'en';
         let currentCurrency = localStorage.getItem('app_currency') || 'GBP';
-        let localMode = localStorage.getItem('local_mode') === 'true';
+        let localMode = false;
 
         const translations = {
             en: {
@@ -1097,8 +1097,8 @@
 
         async function initApp() {
             try {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                const { data: { user } } = await supabase.auth.getUser();
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            const { data: { user } } = await supabase.auth.getUser();
 
             if (user) {
                 currentUser = user;
@@ -1106,9 +1106,6 @@
                 showMainApp();
                 await loadServerData();
                 document.getElementById('sync-status').textContent = '✅ Online';
-            } else if (localMode) {
-                showMainApp();
-                initLocal();
             } else {
                 showAuthScreen();
             }
@@ -1129,10 +1126,8 @@
             renderHistory();
             updateUI();
         } catch (e) {
-            localMode = true;
-            showMainApp();
-            initLocal();
-            document.getElementById('sync-status').textContent = '⚡ Local Mode';
+            showAuthScreen();
+            document.getElementById('sync-status').textContent = 'Connection failed';
         }
     }
 
