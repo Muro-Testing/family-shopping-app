@@ -865,6 +865,8 @@
         let familyInviteCode = '';
         let familyMembers = [];
         let realtimeChannel = null;
+        let syncPollTimer = null;
+        let loadServerDataPromise = null;
         let supportsFamilyRpc = true;
         let supportsFamilyMembersRpc = true;
         let supportsRemoveMemberRpc = true;
@@ -1533,6 +1535,7 @@
             familyName = '';
             familyInviteCode = '';
             familyMembers = [];
+            stopSyncPolling();
             closeSettings();
             showAuthScreen();
         }
@@ -1910,6 +1913,11 @@
         }
 
         async function loadServerData() {
+            if (loadServerDataPromise) {
+                return loadServerDataPromise;
+            }
+
+            loadServerDataPromise = (async () => {
             let { data: familyData, error } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).maybeSingle();
 
             if (error || !familyData) {
@@ -1974,6 +1982,13 @@
             renderHistory();
             renderFamilySettings();
             updateUI();
+            })();
+
+            try {
+                return await loadServerDataPromise;
+            } finally {
+                loadServerDataPromise = null;
+            }
         }
 
         function initRealtime() {
@@ -1989,6 +2004,21 @@
                 .subscribe();
         }
 
+        function startSyncPolling() {
+            stopSyncPolling();
+            syncPollTimer = setInterval(() => {
+                if (!supabase || !currentUser || document.hidden) return;
+                loadServerData().catch(console.error);
+            }, 4000);
+        }
+
+        function stopSyncPolling() {
+            if (syncPollTimer) {
+                clearInterval(syncPollTimer);
+                syncPollTimer = null;
+            }
+        }
+
         async function initApp() {
             try {
                 supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1997,6 +2027,7 @@
                 if (user) {
                     currentUser = user;
                     initRealtime();
+                    startSyncPolling();
                     showMainApp();
                     await loadServerData();
                     document.getElementById('sync-status').textContent = 'Online';
@@ -2012,6 +2043,7 @@
                             localStorage.removeItem('local_mode');
                             showMainApp();
                             initRealtime();
+                            startSyncPolling();
                             await loadServerData();
                             document.getElementById('sync-status').textContent = 'Online';
                         } catch (e) {
@@ -2025,6 +2057,7 @@
                         familyName = '';
                         familyInviteCode = '';
                         familyMembers = [];
+                        stopSyncPolling();
                         showAuthScreen();
                     }
                 });
@@ -2052,6 +2085,18 @@
                 } else {
                     addItem();
                 }
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && supabase && currentUser) {
+                loadServerData().catch(console.error);
+            }
+        });
+
+        window.addEventListener('focus', () => {
+            if (supabase && currentUser) {
+                loadServerData().catch(console.error);
             }
         });
 
