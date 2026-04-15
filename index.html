@@ -1181,11 +1181,27 @@
             
             if (error || !familyData) {
                 // ✅ User is new, create default family for first time users
-                const { data: newFamily } = await supabase.from('families').insert({name: 'My Family'}).select().single();
-                await supabase.from('family_members').insert({
-                    family_id: newFamily.id,
-                    user_id: currentUser.id
-                });
+                const { data: newFamily, error: familyError } = await supabase
+                    .from('families')
+                    .insert({name: 'My Family'})
+                    .select()
+                    .single();
+
+                if (familyError) {
+                    console.log('Family create error:', familyError);
+                }
+
+                const { error: memberError } = await supabase
+                    .from('family_members')
+                    .insert({
+                        family_id: newFamily.id,
+                        user_id: currentUser.id
+                    });
+
+                if (memberError) {
+                    console.log('Member add error:', memberError);
+                }
+
                 familyId = newFamily.id;
             } else {
                 familyId = familyData.family_id;
