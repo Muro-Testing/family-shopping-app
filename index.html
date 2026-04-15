@@ -391,6 +391,8 @@
             justify-content: center;
             z-index: 200;
             padding: 20px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
         }
 
         .modal {
@@ -400,6 +402,8 @@
             width: 100%;
             max-width: 360px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
         }
 
         .modal h3 {
@@ -662,6 +666,17 @@
             h1 {
                 font-size: 28px;
             }
+
+            .modal-overlay {
+                align-items: flex-start;
+                padding: 12px;
+            }
+
+            .modal {
+                max-width: none;
+                max-height: calc(100vh - 24px);
+                margin: auto 0;
+            }
         }
     </style>
 </head>
@@ -821,6 +836,8 @@
         let familyMembers = [];
         let realtimeChannel = null;
         let supportsFamilyRpc = true;
+        let supportsFamilyMembersRpc = true;
+        let supportsRemoveMemberRpc = true;
         let supportsDisplayNameColumn = true;
         let userColors = {};
 
@@ -958,16 +975,88 @@
                     <div class="item-avatar" style="width:26px; height:26px; font-size:11px; background:${getUserColor(member.user_id)}">
                         ${(getMemberDisplayName(member)[0] || 'U').toUpperCase()}
                     </div>
-                    <div style="display:flex; flex-direction:column">
+                    <div style="display:flex; flex-direction:column; flex:1; min-width:0">
                         <div style="font-weight:600">${getMemberDisplayName(member)}${member.user_id === currentUser?.id ? ' (You)' : ''}</div>
-                        <div style="font-size:12px; color:var(--text-secondary)">${member.user_id === currentUser?.id ? 'Current account' : 'Joined family'}</div>
+                        <div style="font-size:12px; color:var(--text-secondary); word-break:break-word">${member.email || (member.user_id === currentUser?.id ? currentUser?.email || 'Current account' : 'No email available')}</div>
                     </div>
+                    ${member.user_id !== currentUser?.id ? `
+                        <button class="settings-btn" style="padding:10px 12px; color:var(--danger); border-color:var(--danger)" onclick='removeFamilyMember(${toInlineArg(member.user_id)})'>
+                            Remove
+                        </button>
+                    ` : `
+                        <div style="font-size:12px; color:var(--text-secondary); white-space:nowrap">You</div>
+                    `}
                 </div>
             `).join('');
         }
 
+        async function removeFamilyMember(userId) {
+            if (!confirm('Remove this family member?')) return;
+
+            try {
+                if (supportsRemoveMemberRpc) {
+                    const { error } = await supabase.rpc('remove_family_member', {
+                        target_family_id: familyId,
+                        target_user_id: userId
+                    });
+
+                    if (error) {
+                        if (error.code === 'PGRST202') {
+                            supportsRemoveMemberRpc = false;
+                        } else {
+                            throw error;
+                        }
+                    } else {
+                        await loadServerData();
+                        return;
+                    }
+                }
+
+                const { error } = await supabase
+                    .from('family_members')
+                    .delete()
+                    .eq('family_id', familyId)
+                    .eq('user_id', userId);
+
+                if (error) throw error;
+                await loadServerData();
+            } catch (e) {
+                alert(e.message || 'Could not remove family member.');
+            }
+        }
+
+        async function loadFamilyMembers() {
+            if (supportsFamilyMembersRpc) {
+                const { data, error } = await supabase.rpc('get_family_members', { target_family_id: familyId });
+                if (!error) {
+                    familyMembers = data || [];
+                    return;
+                }
+
+                if (error.code === 'PGRST202') {
+                    supportsFamilyMembersRpc = false;
+                } else {
+                    throw error;
+                }
+            }
+
+            const { data, error } = await supabase
+                .from('family_members')
+                .select('*')
+                .eq('family_id', familyId)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+
+            familyMembers = (data || []).map(member => ({
+                ...member,
+                email: member.user_id === currentUser?.id ? currentUser.email : ''
+            }));
+        }
+
         function getMemberDisplayName(member) {
             if (member?.display_name) return member.display_name;
+            if (member?.email) return member.email.split('@')[0];
             if (member?.user_id === currentUser?.id && currentUser?.email) return currentUser.email.split('@')[0];
             return 'Family Member';
         }
@@ -1810,14 +1899,7 @@
             familyName = familyMeta?.name || familyName || 'My Family';
             familyInviteCode = familyMeta?.invite_code || familyInviteCode || familyId || '';
 
-            const { data: membersData, error: membersError } = await supabase
-                .from('family_members')
-                .select('*')
-                .eq('family_id', familyId)
-                .order('created_at', { ascending: true });
-
-            if (membersError) throw membersError;
-            familyMembers = membersData || [];
+            await loadFamilyMembers();
 
             const { data: listsData, error: listsError } = await supabase.from('shopping_lists').select('*').eq('family_id', familyId);
             if (listsError) throw listsError;

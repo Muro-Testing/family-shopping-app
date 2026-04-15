@@ -182,6 +182,74 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.get_family_members(target_family_id uuid)
+RETURNS TABLE (
+    user_id uuid,
+    display_name text,
+    email text,
+    created_at timestamp with time zone
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Authentication required';
+    END IF;
+
+    IF NOT public.is_family_member(target_family_id) THEN
+        RAISE EXCEPTION 'Not allowed';
+    END IF;
+
+    RETURN QUERY
+    SELECT fm.user_id, fm.display_name, u.email::text, fm.created_at
+    FROM public.family_members fm
+    LEFT JOIN auth.users u ON u.id = fm.user_id
+    WHERE fm.family_id = target_family_id
+    ORDER BY fm.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.remove_family_member(target_family_id uuid, target_user_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    remaining_members integer;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Authentication required';
+    END IF;
+
+    IF NOT public.is_family_member(target_family_id) THEN
+        RAISE EXCEPTION 'Not allowed';
+    END IF;
+
+    IF target_user_id = auth.uid() THEN
+        RAISE EXCEPTION 'Use logout or a dedicated leave action to remove yourself';
+    END IF;
+
+    DELETE FROM public.family_members
+    WHERE family_id = target_family_id
+      AND user_id = target_user_id;
+
+    GET DIAGNOSTICS remaining_members = ROW_COUNT;
+
+    IF remaining_members = 0 THEN
+        RAISE EXCEPTION 'Family member not found';
+    END IF;
+
+    RETURN jsonb_build_object(
+        'removed_user_id', target_user_id,
+        'family_id', target_family_id
+    );
+END;
+$$;
+
 UPDATE public.families
 SET invite_code = public.generate_family_invite_code()
 WHERE invite_code IS NULL;
@@ -197,9 +265,13 @@ REVOKE ALL ON FUNCTION public.generate_family_invite_code() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.current_user_display_name() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.bootstrap_family() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.join_family_by_code(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_family_members(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.remove_family_member(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_family_member(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.bootstrap_family() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.join_family_by_code(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_family_members(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.remove_family_member(uuid, uuid) TO authenticated;
 
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 
