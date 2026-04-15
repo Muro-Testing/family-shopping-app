@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://family-shopping-app-tau.vercel.app/sitemap.xml

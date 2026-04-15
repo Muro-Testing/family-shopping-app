@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Family Shopping List</title>
+  <desc id="desc">Blue rounded shopping bag icon with family dots and a white checklist.</desc>
+  <defs>
+    <linearGradient id="bg" x1="32" y1="20" x2="224" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2FA4FF"/>
+      <stop offset="1" stop-color="#0057D9"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#003B8E" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect x="20" y="20" width="216" height="216" rx="52" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <path d="M77 90c0-28 22-50 51-50s51 22 51 50h-20c0-17-13-30-31-30s-31 13-31 30z" fill="#CBE7FF"/>
+    <path d="M66 86h124c11 0 19 10 17 21l-11 80c-2 11-11 19-22 19H82c-11 0-20-8-22-19l-11-80c-2-11 6-21 17-21z" fill="#F7FBFF"/>
+    <circle cx="103" cy="111" r="12" fill="#2FA4FF"/>
+    <circle cx="128" cy="103" r="14" fill="#0C7BFF"/>
+    <circle cx="154" cy="111" r="12" fill="#2FA4FF"/>
+    <path d="M95 148l12 12 26-28" fill="none" stroke="#11A85C" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
+    <path d="M145 148h23" stroke="#9CB8D8" stroke-linecap="round" stroke-width="10"/>
+    <path d="M145 170h18" stroke="#9CB8D8" stroke-linecap="round" stroke-width="10"/>
+  </g>
+</svg>

@@ -35,7 +35,7 @@ DECLARE
     candidate text;
 BEGIN
     LOOP
-        candidate := upper(encode(gen_random_bytes(4), 'hex'));
+        candidate := upper(substring(md5(random()::text || clock_timestamp()::text || gen_random_uuid()::text) from 1 for 8));
         EXIT WHEN NOT EXISTS (
             SELECT 1
             FROM public.families
