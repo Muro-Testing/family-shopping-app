@@ -675,6 +675,7 @@
                 <form onsubmit="event.preventDefault(); login()">
                 <input type="email" id="auth-email" placeholder="Email address" autocomplete="username">
                 <input type="password" id="auth-password" placeholder="Password" autocomplete="current-password">
+                <input type="text" id="auth-invite-code" placeholder="Family invite code (optional)" autocomplete="off" style="text-transform:uppercase">
                 </form>
                 
                 <button class="auth-btn primary" onclick="login()">Login</button>
@@ -736,6 +737,23 @@
 
         <div class="modal-overlay" id="settings-modal" style="display:none">
             <div class="modal">
+                <div style="display:none" id="family-settings-anchor"></div>
+                <div style="margin:20px 0; padding:14px; border:1px solid var(--border-light); border-radius:12px; background:var(--bg)">
+                    <div style="font-weight:600; margin-bottom:6px">Family</div>
+                    <div id="family-name-label" style="font-size:15px; margin-bottom:12px; color:var(--text-secondary)">Not connected</div>
+                    <div style="font-size:13px; color:var(--text-secondary); margin-bottom:6px">Invite code</div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px">
+                        <input type="text" id="family-invite-code" readonly value="-" style="border:1px solid var(--border); border-radius:8px; padding:12px; font-weight:700; letter-spacing:1px">
+                        <button class="settings-btn" onclick="copyInviteCode()">Copy</button>
+                    </div>
+                    <div style="font-size:13px; color:var(--text-secondary); margin-bottom:6px">Join another family</div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px">
+                        <input type="text" id="join-family-code" placeholder="Enter invite code" autocomplete="off" style="border:1px solid var(--border); border-radius:8px; padding:12px; text-transform:uppercase">
+                        <button class="settings-btn active" onclick="joinFamilyFromSettings()">Join</button>
+                    </div>
+                    <div style="font-size:13px; color:var(--text-secondary); margin-bottom:6px">Members</div>
+                    <div id="family-members-list" style="display:flex; flex-direction:column; gap:8px; font-size:14px"></div>
+                </div>
                 <h3>⚙️ Settings</h3>
                 
                 <div style="margin:20px 0">
@@ -798,6 +816,12 @@
         let supabase = null;
         let currentUser = null;
         let familyId = null;
+        let familyName = '';
+        let familyInviteCode = '';
+        let familyMembers = [];
+        let realtimeChannel = null;
+        let supportsFamilyRpc = true;
+        let supportsDisplayNameColumn = true;
         let userColors = {};
 
         let lists = [];
@@ -899,6 +923,200 @@
 
         function toInlineArg(value) {
             return JSON.stringify(value);
+        }
+
+        function getPendingInviteCode() {
+            return (localStorage.getItem('pending_family_invite_code') || '').trim().toUpperCase();
+        }
+
+        function setPendingInviteCode(code) {
+            const normalized = (code || '').trim().toUpperCase();
+            if (normalized) {
+                localStorage.setItem('pending_family_invite_code', normalized);
+            } else {
+                localStorage.removeItem('pending_family_invite_code');
+            }
+            return normalized;
+        }
+
+        function renderFamilySettings() {
+            const familyNameLabel = document.getElementById('family-name-label');
+            const inviteCodeInput = document.getElementById('family-invite-code');
+            const membersList = document.getElementById('family-members-list');
+            if (!familyNameLabel || !inviteCodeInput || !membersList) return;
+
+            familyNameLabel.textContent = familyName ? `${familyName} ${familyMembers.length ? `• ${familyMembers.length} member${familyMembers.length === 1 ? '' : 's'}` : ''}` : 'Not connected';
+            inviteCodeInput.value = familyInviteCode || '-';
+
+            if (!familyMembers.length) {
+                membersList.innerHTML = `<div style="color:var(--text-secondary)">No family members loaded yet.</div>`;
+                return;
+            }
+
+            membersList.innerHTML = familyMembers.map(member => `
+                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; background:var(--card)">
+                    <div class="item-avatar" style="width:26px; height:26px; font-size:11px; background:${getUserColor(member.user_id)}">
+                        ${(getMemberDisplayName(member)[0] || 'U').toUpperCase()}
+                    </div>
+                    <div style="display:flex; flex-direction:column">
+                        <div style="font-weight:600">${getMemberDisplayName(member)}${member.user_id === currentUser?.id ? ' (You)' : ''}</div>
+                        <div style="font-size:12px; color:var(--text-secondary)">${member.user_id === currentUser?.id ? 'Current account' : 'Joined family'}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getMemberDisplayName(member) {
+            if (member?.display_name) return member.display_name;
+            if (member?.user_id === currentUser?.id && currentUser?.email) return currentUser.email.split('@')[0];
+            return 'Family Member';
+        }
+
+        async function copyInviteCode() {
+            if (!familyInviteCode || familyInviteCode === '-') {
+                alert('No family invite code available yet.');
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(familyInviteCode);
+                alert('Invite code copied.');
+            } catch (e) {
+                alert(`Invite code: ${familyInviteCode}`);
+            }
+        }
+
+        async function ensureFamilyMembership() {
+            const pendingInviteCode = getPendingInviteCode();
+            let data = null;
+            let error = null;
+
+            if (supportsFamilyRpc) {
+                const rpcName = pendingInviteCode ? 'join_family_by_code' : 'bootstrap_family';
+                const rpcArgs = pendingInviteCode ? { invite_code_input: pendingInviteCode } : {};
+                const rpcResponse = await supabase.rpc(rpcName, rpcArgs);
+                data = rpcResponse.data;
+                error = rpcResponse.error;
+
+                if (error && error.code === 'PGRST202') {
+                    supportsFamilyRpc = false;
+                }
+            }
+
+            if (error || !data) {
+                if (pendingInviteCode) {
+                    return await joinFamilyByCode(pendingInviteCode, true);
+                }
+
+                const newFamilyId = crypto.randomUUID();
+                const { error: createFamilyError } = await supabase.from('families').insert({
+                    id: newFamilyId,
+                    name: 'My Family'
+                });
+
+                if (createFamilyError) {
+                    throw createFamilyError;
+                }
+
+                let memberInsert = supportsDisplayNameColumn
+                    ? await supabase.from('family_members').insert({
+                        family_id: newFamilyId,
+                        user_id: currentUser.id,
+                        display_name: currentUser.email ? currentUser.email.split('@')[0] : 'Family Member'
+                    })
+                    : await supabase.from('family_members').insert({
+                        family_id: newFamilyId,
+                        user_id: currentUser.id
+                    });
+
+                if (memberInsert.error && memberInsert.error.message?.includes('display_name')) {
+                    supportsDisplayNameColumn = false;
+                    memberInsert = await supabase.from('family_members').insert({
+                        family_id: newFamilyId,
+                        user_id: currentUser.id
+                    });
+                }
+
+                if (memberInsert.error) {
+                    throw memberInsert.error;
+                }
+
+                familyId = newFamilyId;
+                familyName = 'My Family';
+                familyInviteCode = newFamilyId;
+                setPendingInviteCode('');
+                return { family_id: newFamilyId, family_name: familyName, invite_code: familyInviteCode };
+            }
+
+            setPendingInviteCode('');
+            familyId = data.family_id;
+            familyName = data.family_name || 'My Family';
+            familyInviteCode = data.invite_code || '';
+            return data;
+        }
+
+        async function joinFamilyByCode(code, fallbackOnly = false) {
+            const normalized = (code || '').trim().toUpperCase();
+            if (!normalized) {
+                alert('Enter an invite code first.');
+                return;
+            }
+
+            if (!fallbackOnly && supportsFamilyRpc) {
+                const { data, error } = await supabase.rpc('join_family_by_code', { invite_code_input: normalized });
+                if (error && error.code === 'PGRST202') {
+                    supportsFamilyRpc = false;
+                } else if (!error) {
+                    familyId = data.family_id;
+                    familyName = data.family_name || familyName;
+                    familyInviteCode = data.invite_code || familyInviteCode;
+                    await loadServerData();
+                    return;
+                }
+            }
+
+            const { error: deleteMembershipsError } = await supabase.from('family_members').delete().eq('user_id', currentUser.id);
+            if (deleteMembershipsError) {
+                throw deleteMembershipsError;
+            }
+
+            let memberInsert = supportsDisplayNameColumn
+                ? await supabase.from('family_members').insert({
+                    family_id: normalized,
+                    user_id: currentUser.id,
+                    display_name: currentUser.email ? currentUser.email.split('@')[0] : 'Family Member'
+                })
+                : await supabase.from('family_members').insert({
+                    family_id: normalized,
+                    user_id: currentUser.id
+                });
+
+            if (memberInsert.error && memberInsert.error.message?.includes('display_name')) {
+                supportsDisplayNameColumn = false;
+                memberInsert = await supabase.from('family_members').insert({
+                    family_id: normalized,
+                    user_id: currentUser.id
+                });
+            }
+
+            if (memberInsert.error) {
+                throw memberInsert.error;
+            }
+
+            familyId = normalized;
+            familyInviteCode = normalized;
+            await loadServerData();
+        }
+
+        async function joinFamilyFromSettings() {
+            try {
+                const code = document.getElementById('join-family-code').value;
+                await joinFamilyByCode(code);
+                document.getElementById('join-family-code').value = '';
+                alert('Joined family successfully.');
+            } catch (e) {
+                alert(e.message || 'Could not join family.');
+            }
         }
 
         function renderListSelector() {
@@ -1104,6 +1322,8 @@
                 avatar.style.background = getUserColor(currentUser.id);
                 avatar.textContent = currentUser.email ? currentUser.email[0].toUpperCase() : 'U';
             }
+
+            renderFamilySettings();
         }
 
         function toggleSettings() {
@@ -1133,6 +1353,7 @@
         async function login() {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
+            const inviteCode = document.getElementById('auth-invite-code').value;
             
             if (!email || !password) {
                 alert('Please enter email and password');
@@ -1140,6 +1361,7 @@
             }
 
             try {
+                setPendingInviteCode(inviteCode);
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) {
                     alert(error.message);
@@ -1152,6 +1374,7 @@
         async function signup() {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
+            const inviteCode = document.getElementById('auth-invite-code').value;
             
             if (password.length < 6) {
                 alert('Password must be at least 6 characters');
@@ -1159,6 +1382,7 @@
             }
 
             try {
+                setPendingInviteCode(inviteCode);
                 const { data, error } = await supabase.auth.signUp({
                     email,
                     password,
@@ -1186,6 +1410,10 @@
         async function logout() {
             await supabase.auth.signOut();
             currentUser = null;
+            familyId = null;
+            familyName = '';
+            familyInviteCode = '';
+            familyMembers = [];
             closeSettings();
             showAuthScreen();
         }
@@ -1253,7 +1481,7 @@
         }
 
         async function loadServerData() {
-            let { data: familyData, error } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).single();
+            let { data: familyData, error } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).maybeSingle();
             
             if (error || !familyData) {
                 // ✅ User is new, create default family for first time users
@@ -1348,13 +1576,18 @@
             if (!name) return;
 
             if (supabase && currentUser) {
-                await supabase.from('shopping_items').insert({
+                const { error } = await supabase.from('shopping_items').insert({
                     family_id: familyId,
                     list_id: currentListId,
                     name,
                     quantity: qty,
                     created_by: currentUser.id
                 });
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+                await loadServerData();
             } else {
                 const list = lists.find(l => l.id === currentListId);
                 if (!list) return;
@@ -1380,11 +1613,16 @@
         async function toggleItem(id) {
             if (supabase && currentUser) {
                 const item = (await supabase.from('shopping_items').select('checked').eq('id', id).single()).data;
-                await supabase.from('shopping_items').update({
+                const { error } = await supabase.from('shopping_items').update({
                     checked: !item.checked,
                     checked_by: !item.checked ? currentUser.id : null,
                     checked_at: !item.checked ? new Date().toISOString() : null
                 }).eq('id', id);
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+                await loadServerData();
             } else {
                 const list = lists.find(l => l.id === currentListId);
                 if (!list) return;
@@ -1402,7 +1640,12 @@
             e.stopPropagation();
             
             if (supabase && currentUser) {
-                await supabase.from('shopping_items').delete().eq('id', id);
+                const { error } = await supabase.from('shopping_items').delete().eq('id', id);
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+                await loadServerData();
             } else {
                 const list = lists.find(l => l.id === currentListId);
                 if (!list) return;
@@ -1419,7 +1662,13 @@
             if (supabase && currentUser) {
                 const list = lists.find(l => l.id === currentListId);
                 const checkedIds = list.items.filter(i => i.checked).map(i => i.id);
-                await supabase.from('shopping_items').delete().in('id', checkedIds);
+                if (checkedIds.length === 0) return;
+                const { error } = await supabase.from('shopping_items').delete().in('id', checkedIds);
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+                await loadServerData();
             } else {
                 const list = lists.find(l => l.id === currentListId);
                 if (!list) return;
@@ -1451,14 +1700,23 @@
             if (!list) return;
 
             if (supabase && currentUser) {
-                await supabase.from('shopping_trips').insert({
+                const { error: tripError } = await supabase.from('shopping_trips').insert({
                     family_id: familyId,
                     total_amount: total,
                     completed_by: currentUser.id,
                     items: JSON.stringify(list.items)
                 });
+                if (tripError) {
+                    alert(tripError.message);
+                    return;
+                }
 
-                await supabase.from('shopping_items').delete().eq('list_id', currentListId);
+                const { error: deleteItemsError } = await supabase.from('shopping_items').delete().eq('list_id', currentListId);
+                if (deleteItemsError) {
+                    alert(deleteItemsError.message);
+                    return;
+                }
+                await loadServerData();
             } else {
                 const trip = {
                     id: Date.now(),
@@ -1532,13 +1790,152 @@
             document.getElementById('sidebar').classList.toggle('open');
         }
 
+        async function loadServerData() {
+            let { data: familyData, error } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).maybeSingle();
+
+            if (error || !familyData) {
+                await ensureFamilyMembership();
+            } else {
+                familyId = familyData.family_id;
+            }
+
+            const { data: familyMeta, error: familyMetaError } = await supabase
+                .from('families')
+                .select('*')
+                .eq('id', familyId)
+                .maybeSingle();
+
+            if (familyMetaError) throw familyMetaError;
+
+            familyName = familyMeta?.name || familyName || 'My Family';
+            familyInviteCode = familyMeta?.invite_code || familyInviteCode || familyId || '';
+
+            const { data: membersData, error: membersError } = await supabase
+                .from('family_members')
+                .select('*')
+                .eq('family_id', familyId)
+                .order('created_at', { ascending: true });
+
+            if (membersError) throw membersError;
+            familyMembers = membersData || [];
+
+            const { data: listsData, error: listsError } = await supabase.from('shopping_lists').select('*').eq('family_id', familyId);
+            if (listsError) throw listsError;
+            lists = listsData || [];
+
+            if (lists.length === 0) {
+                const { data: defaultList, error: defaultListError } = await supabase
+                    .from('shopping_lists')
+                    .insert({
+                        family_id: familyId,
+                        name: 'Default',
+                        created_by: currentUser.id
+                    })
+                    .select()
+                    .single();
+
+                if (defaultListError || !defaultList) {
+                    throw defaultListError || new Error('Could not create default list');
+                }
+
+                lists = [defaultList];
+            }
+
+            const { data: itemsData, error: itemsError } = await supabase.from('shopping_items').select('*').eq('family_id', familyId).is('completed_trip_id', null);
+            if (itemsError) throw itemsError;
+            const openItems = itemsData || [];
+
+            lists.forEach(list => {
+                list.items = openItems.filter(i => i.list_id === list.id);
+            });
+
+            const storedListId = localStorage.getItem('current_list_id');
+            currentListId = lists.find(list => String(list.id) === String(storedListId))?.id || lists[0].id;
+            localStorage.setItem('current_list_id', currentListId);
+
+            const { data: tripsData, error: tripsError } = await supabase.from('shopping_trips').select('*').eq('family_id', familyId).order('completed_at', { ascending: false });
+            if (tripsError) throw tripsError;
+            history = tripsData || [];
+
+            renderListSelector();
+            renderItems();
+            renderHistory();
+            renderFamilySettings();
+            updateUI();
+        }
+
+        function initRealtime() {
+            if (realtimeChannel) {
+                supabase.removeChannel(realtimeChannel);
+            }
+
+            realtimeChannel = supabase.channel('live')
+                .on('postgres_changes', { event:'*', schema:'public', table:'shopping_items' }, () => loadServerData())
+                .on('postgres_changes', { event:'*', schema:'public', table:'shopping_lists' }, () => loadServerData())
+                .on('postgres_changes', { event:'*', schema:'public', table:'shopping_trips' }, () => loadServerData())
+                .on('postgres_changes', { event:'*', schema:'public', table:'family_members' }, () => loadServerData())
+                .subscribe();
+        }
+
+        async function initApp() {
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                const { data: { user } } = await supabase.auth.getUser();
+
+                if (user) {
+                    currentUser = user;
+                    initRealtime();
+                    showMainApp();
+                    await loadServerData();
+                    document.getElementById('sync-status').textContent = 'Online';
+                } else {
+                    showAuthScreen();
+                }
+
+                supabase.auth.onAuthStateChange(async (event, session) => {
+                    if (session?.user) {
+                        try {
+                            currentUser = session.user;
+                            localMode = false;
+                            localStorage.removeItem('local_mode');
+                            showMainApp();
+                            initRealtime();
+                            await loadServerData();
+                            document.getElementById('sync-status').textContent = 'Online';
+                        } catch (e) {
+                            console.error(e);
+                            document.getElementById('sync-status').textContent = 'Setup failed';
+                            alert(e.message || 'Could not load your family.');
+                        }
+                    } else if (event === 'SIGNED_OUT') {
+                        currentUser = null;
+                        familyId = null;
+                        familyName = '';
+                        familyInviteCode = '';
+                        familyMembers = [];
+                        showAuthScreen();
+                    }
+                });
+
+                renderListSelector();
+                renderItems();
+                renderHistory();
+                renderFamilySettings();
+                updateUI();
+            } catch (e) {
+                console.error(e);
+                showAuthScreen();
+                document.getElementById('sync-status').textContent = 'Connection failed';
+            }
+        }
+
         document.addEventListener('keypress', e => {
             if (e.key === 'Enter') {
                 if (document.activeElement.id === 'receipt-total') {
                     completeShopping();
                 } else if (document.activeElement.id === 'new-list-name') {
                     createNewList();
-                } else if (document.activeElement.id === 'auth-email' || document.activeElement.id === 'auth-password') {
+                } else if (document.activeElement.id === 'auth-email' || document.activeElement.id === 'auth-password' || document.activeElement.id === 'auth-invite-code') {
                     login();
                 } else {
                     addItem();
