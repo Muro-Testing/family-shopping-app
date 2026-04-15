@@ -1166,8 +1166,19 @@
         }
 
         async function loadServerData() {
-            const { data: familyData } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).single();
-            familyId = familyData.family_id;
+            let { data: familyData, error } = await supabase.from('family_members').select('family_id').eq('user_id', currentUser.id).single();
+            
+            if (error || !familyData) {
+                // ✅ User is new, create default family for first time users
+                const { data: newFamily } = await supabase.from('families').insert({name: 'My Family'}).select().single();
+                await supabase.from('family_members').insert({
+                    family_id: newFamily.id,
+                    user_id: currentUser.id
+                });
+                familyId = newFamily.id;
+            } else {
+                familyId = familyData.family_id;
+            }
 
             const { data: listsData } = await supabase.from('shopping_lists').select('*').eq('family_id', familyId);
             lists = listsData || [];
