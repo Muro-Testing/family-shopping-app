@@ -1058,8 +1058,19 @@
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
             
-            const { error } = await supabase.auth.signInWithPassword({ email, password });
-            if (error) alert(error.message);
+            if (!email || !password) {
+                alert('Please enter email and password');
+                return;
+            }
+
+            try {
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) {
+                    alert(error.message);
+                }
+            } catch (e) {
+                alert('Connection error. Try again.');
+            }
         }
 
         async function signup() {
