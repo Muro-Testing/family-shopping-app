@@ -1066,9 +1066,34 @@
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
             
-            const { error } = await supabase.auth.signUp({ email, password });
-            if (error) alert(error.message);
-            else alert('Check your email for confirmation link');
+            if (password.length < 6) {
+                alert('Password must be at least 6 characters');
+                return;
+            }
+
+            try {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        emailRedirectTo: window.location.origin
+                    }
+                });
+
+                if (error) {
+                    console.log('Signup error full:', error);
+                    alert(error.message + '\n\nCode: ' + error.status);
+                } else {
+                    if (data.user && !data.user.confirmed_at) {
+                        alert('✅ Account created. You can login now.');
+                    } else {
+                        alert('✅ Account created successfully');
+                    }
+                }
+            } catch (e) {
+                console.log('Exception:', e);
+                alert('Connection error. Try again.');
+            }
         }
 
         async function logout() {
