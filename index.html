@@ -897,14 +897,18 @@
             return hash;
         }
 
+        function toInlineArg(value) {
+            return JSON.stringify(value);
+        }
+
         function renderListSelector() {
             const selector = document.getElementById('list-selector');
             
             let html = '';
             lists.forEach(list => {
-                html += `<div class="list-tab ${list.id === currentListId ? 'active' : ''}" onclick="switchList(${list.id})" oncontextmenu="renameList(${list.id}, event)">
+                html += `<div class="list-tab ${list.id === currentListId ? 'active' : ''}" onclick='switchList(${toInlineArg(list.id)})' oncontextmenu='renameList(${toInlineArg(list.id)}, event)'>
                     ${list.name}
-                    ${lists.length > 1 ? `<span class="list-delete" onclick="event.stopPropagation(); deleteList(${list.id})">×</span>` : ''}
+                    ${lists.length > 1 ? `<span class="list-delete" onclick='event.stopPropagation(); deleteList(${toInlineArg(list.id)})'>×</span>` : ''}
                 </div>`;
             });
             html += `<div class="add-list-btn" onclick="showNewListModal()">+</div>`;
@@ -933,7 +937,20 @@
             if (!name) return;
 
             if (supabase && currentUser) {
-                await supabase.from('shopping_lists').insert({family_id: familyId, name, created_by: currentUser.id});
+                const { data, error } = await supabase
+                    .from('shopping_lists')
+                    .insert({family_id: familyId, name, created_by: currentUser.id})
+                    .select()
+                    .single();
+
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+
+                currentListId = data.id;
+                localStorage.setItem('current_list_id', currentListId);
+                await loadServerData();
             } else {
                 const newId = Math.max(...lists.map(l => l.id), 0) + 1;
                 lists.push({ id: newId, name, items: [] });
@@ -947,15 +964,32 @@
             renderItems();
         }
 
-        function renameList(listId, e) {
+        async function renameList(listId, e) {
             e.preventDefault();
             const list = lists.find(l => l.id === listId);
             if (!list) return;
 
             const newName = prompt(`Rename list "${list.name}":`, list.name);
             if (newName && newName.trim()) {
-                list.name = newName.trim();
-                saveLists();
+                const trimmedName = newName.trim();
+
+                if (supabase && currentUser) {
+                    const { error } = await supabase
+                        .from('shopping_lists')
+                        .update({ name: trimmedName })
+                        .eq('id', listId);
+
+                    if (error) {
+                        alert(error.message);
+                        return;
+                    }
+
+                    await loadServerData();
+                } else {
+                    list.name = trimmedName;
+                    saveLists();
+                }
+
                 renderListSelector();
             }
         }
@@ -965,7 +999,13 @@
             if (!confirm('Delete this list?')) return;
 
             if (supabase && currentUser) {
-                await supabase.from('shopping_lists').delete().eq('id', listId);
+                const { error } = await supabase.from('shopping_lists').delete().eq('id', listId);
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+
+                await loadServerData();
             } else {
                 lists = lists.filter(l => l.id !== listId);
                 if (currentListId === listId) {
@@ -983,7 +1023,13 @@
             if (!confirm('Delete this history entry?')) return;
             
             if (supabase && currentUser) {
-                await supabase.from('shopping_trips').delete().eq('id', tripId);
+                const { error } = await supabase.from('shopping_trips').delete().eq('id', tripId);
+                if (error) {
+                    alert(error.message);
+                    return;
+                }
+
+                await loadServerData();
             } else {
                 history = history.filter(t => t.id !== tripId);
                 saveLocalHistory();
@@ -993,17 +1039,47 @@
 
         async function deleteAllLists() {
             if (!confirm('Delete ALL shopping lists permanently?')) return;
-            
-            lists = [{id:1, name:"Default", items:[]}];
-            currentListId = 1;
-            history = [];
-            
-            saveLists();
-            saveLocalHistory();
-            
-            renderListSelector();
-            renderItems();
-            renderHistory();
+
+            if (supabase && currentUser) {
+                const listIds = lists.map(list => list.id);
+                const tripIds = history.map(trip => trip.id);
+
+                if (listIds.length > 0) {
+                    const { error: deleteItemsError } = await supabase.from('shopping_items').delete().in('list_id', listIds);
+                    if (deleteItemsError) {
+                        alert(deleteItemsError.message);
+                        return;
+                    }
+
+                    const { error: deleteListsError } = await supabase.from('shopping_lists').delete().in('id', listIds);
+                    if (deleteListsError) {
+                        alert(deleteListsError.message);
+                        return;
+                    }
+                }
+
+                if (tripIds.length > 0) {
+                    const { error: deleteTripsError } = await supabase.from('shopping_trips').delete().in('id', tripIds);
+                    if (deleteTripsError) {
+                        alert(deleteTripsError.message);
+                        return;
+                    }
+                }
+
+                await loadServerData();
+            } else {
+                lists = [{id:1, name:"Default", items:[]}];
+                currentListId = 1;
+                history = [];
+                
+                saveLists();
+                saveLocalHistory();
+                
+                renderListSelector();
+                renderItems();
+                renderHistory();
+            }
+
             closeSettings();
         }
 
@@ -1187,8 +1263,9 @@
                     .select()
                     .single();
 
-                if (familyError) {
+                if (familyError || !newFamily) {
                     console.log('Family create error:', familyError);
+                    throw familyError || new Error('Could not create family');
                 }
 
                 const { error: memberError } = await supabase
@@ -1200,6 +1277,7 @@
 
                 if (memberError) {
                     console.log('Member add error:', memberError);
+                    throw memberError;
                 }
 
                 familyId = newFamily.id;
@@ -1210,17 +1288,34 @@
             const { data: listsData } = await supabase.from('shopping_lists').select('*').eq('family_id', familyId);
             lists = listsData || [];
 
-            const { data: itemsData } = await supabase.from('shopping_items').select('*').eq('family_id', familyId).is('completed_trip_id', null);
-            
-            lists.forEach(list => {
-                list.items = itemsData.filter(i => i.list_id === list.id) || [];
-            });
-
             if (lists.length === 0) {
-                lists.push({id:1, name:"Default", items:[]});
+                const { data: defaultList, error: defaultListError } = await supabase
+                    .from('shopping_lists')
+                    .insert({
+                        family_id: familyId,
+                        name: 'Default',
+                        created_by: currentUser.id
+                    })
+                    .select()
+                    .single();
+
+                if (defaultListError || !defaultList) {
+                    throw defaultListError || new Error('Could not create default list');
+                }
+
+                lists = [defaultList];
             }
 
-            currentListId = lists[0].id;
+            const { data: itemsData } = await supabase.from('shopping_items').select('*').eq('family_id', familyId).is('completed_trip_id', null);
+            const openItems = itemsData || [];
+            
+            lists.forEach(list => {
+                list.items = openItems.filter(i => i.list_id === list.id);
+            });
+
+            const storedListId = localStorage.getItem('current_list_id');
+            currentListId = lists.find(list => String(list.id) === String(storedListId))?.id || lists[0].id;
+            localStorage.setItem('current_list_id', currentListId);
 
             const { data: tripsData } = await supabase.from('shopping_trips').select('*').eq('family_id', familyId).order('completed_at', {ascending:false});
             history = tripsData || [];
@@ -1402,14 +1497,14 @@
             const sorted = [...items].sort((a,b) => a.checked - b.checked);
 
             list.innerHTML = sorted.map(item => `
-            <div class="item-card ${item.checked ? 'checked' : ''}" onclick="toggleItem(${item.id})">
+            <div class="item-card ${item.checked ? 'checked' : ''}" onclick='toggleItem(${toInlineArg(item.id)})'>
                 <div class="checkbox ${item.checked ? 'checked' : ''}">${item.checked ? '<i class="fa-solid fa-check"></i>' : ''}</div>
                 <div class="item-name">${item.name}</div>
                 <div class="item-qty">${item.quantity}</div>
                 
                 ${item.created_by ? `<div class="item-avatar" style="background:${getUserColor(item.created_by)}">${item.created_by[0].toUpperCase()}</div>` : ''}
                 
-                <div class="delete-btn" onclick="deleteItem(${item.id}, event)"><i class="fa-solid fa-xmark"></i></div>
+                <div class="delete-btn" onclick='deleteItem(${toInlineArg(item.id)}, event)'><i class="fa-solid fa-xmark"></i></div>
             </div>
             `).join('');
         }
@@ -1424,7 +1519,7 @@
                     <div class="history-date">${new Date(trip.completed_at).toLocaleDateString()} • ${trip.list_name || 'Shopping'}</div>
                     <div class="history-total">${trip.total_amount.toFixed(2)} ${currentCurrency}</div>
                 </div>
-                <div class="delete-btn" onclick="deleteHistoryEntry(${trip.id}); event.stopPropagation();" style="opacity:1"><i class="fa-solid fa-trash"></i></div>
+                <div class="delete-btn" onclick='deleteHistoryEntry(${toInlineArg(trip.id)}); event.stopPropagation();' style="opacity:1"><i class="fa-solid fa-trash"></i></div>
             </div>
             `).join('');
 
@@ -1455,3 +1550,4 @@
     </script>
 </body>
 </html>
+
